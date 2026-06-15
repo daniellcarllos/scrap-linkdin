@@ -330,6 +330,20 @@ def _e_periodo(linha: str) -> bool:
     return bool(_REGEX_PERIODO.search(linha)) or "presente" in linha.lower()
 
 
+def _e_vinculo_com_duracao(linha: str) -> bool:
+    """Detecta 'Tempo integral · 11 a 5 m' — formato LinkedIn compacto (nov/2025+).
+
+    O LinkedIn passou a combinar tipo de vínculo + duração abreviada em uma linha só,
+    separados por '·'. Exemplos: 'Tempo integral · 11 a 5 m', 'Estágio · 6 m'.
+    """
+    return bool(re.match(
+        r"^(tempo integral|meio período|freelance|autônomo|contrato|"
+        r"temporário|estágio|aprendiz|voluntário)"
+        r"\s*·\s*\d+\s*(a|ano|anos)(\s*\d+\s*(m|mês|meses))?\s*$",
+        linha, re.I | re.UNICODE,
+    ))
+
+
 def _e_duracao(linha: str) -> bool:
     """Retorna True se a linha é APENAS uma duração ('2 anos', '11 anos 5 meses')."""
     return bool(re.match(
@@ -364,7 +378,7 @@ def _parse_experiencias_inner_text(linhas: list[str]) -> list[dict]:
     experiencias = []
     TIPOS_VINCULO = {"tempo integral", "meio período", "freelance", "autônomo",
                      "contrato", "temporário", "estágio", "aprendiz", "voluntário",
-                     "aprimorar com ia", "no local", "híbrido", "remoto"}
+                     "aprimorar com ia", "no local", "híbrido", "remoto", "presencial"}
     SKIP_PREFIXOS = ("competências:", "skills:", "atividades e grupos:", "… mais",
                      "mostrar mais", "mostrar menos", "ver mais", "ver menos", "·")
     FOOTER_TOKENS = {"idioma do perfil", "sobre", "acessibilidade", "linkedin corporation"}
@@ -385,9 +399,11 @@ def _parse_experiencias_inner_text(linhas: list[str]) -> list[dict]:
         if linha_lower in FOOTER_TOKENS:
             break
 
-        # Skip: linha vazia, UI, tipos de vínculo, prefixos de skip
+        # Skip: linha vazia, UI, tipos de vínculo, prefixos de skip,
+        # ou formato combinado "Tempo integral · 11 a 5 m" (LinkedIn nov/2025+)
         if (not linha or len(linha) < 2 or linha_lower in TIPOS_VINCULO
-                or any(linha_lower.startswith(p) for p in SKIP_PREFIXOS)):
+                or any(linha_lower.startswith(p) for p in SKIP_PREFIXOS)
+                or _e_vinculo_com_duracao(linha)):
             i += 1
             continue
 
@@ -401,12 +417,14 @@ def _parse_experiencias_inner_text(linhas: list[str]) -> list[dict]:
             i += 1
             continue
 
-        # Possível empresa: linha sem período, não é duração, segue padrão de nome curto
-        # Heurística: se a próxima linha não nula for uma duração total → esta é uma empresa
+        # Possível empresa: heurística — se a próxima linha não nula for
+        # uma duração total OU um vínculo combinado ("Tempo integral · Xa") → esta é empresa
         candidato_empresa = False
         for j in range(i + 1, min(i + 4, len(linhas))):
             if linhas[j].strip():
-                if _e_duracao(linhas[j]) and not _e_periodo(linhas[j]):
+                nxt = linhas[j]
+                if ((_e_duracao(nxt) and not _e_periodo(nxt))
+                        or _e_vinculo_com_duracao(nxt)):
                     candidato_empresa = True
                 break
         if candidato_empresa:
@@ -422,6 +440,7 @@ def _parse_experiencias_inner_text(linhas: list[str]) -> list[dict]:
 
         # Coleta tipo, período e descrição
         veio_pos_competencias = False
+        veio_pos_periodo = False      # flag para pular localização logo após período
         while i < len(linhas):
             l = linhas[i]
             l_lower = l.lower()
@@ -434,11 +453,20 @@ def _parse_experiencias_inner_text(linhas: list[str]) -> list[dict]:
                 if not periodo:
                     periodo = re.split(r"\s*·\s*\d", l)[0].strip()
                 veio_pos_competencias = False
+                veio_pos_periodo = True
                 i += 1
                 continue
 
-            # Pula tipo de vínculo, UI e prefixos
-            if l_lower in TIPOS_VINCULO:
+            # Linha logo após período costuma ser localização ("Fortaleza, Ceará, Brasil"
+            # ou "Fortaleza e Região") — pula se for texto curto sem dígitos
+            if veio_pos_periodo:
+                veio_pos_periodo = False
+                if len(l) < 70 and re.match(r'^[A-Za-zÀ-ÖØ-öø-ÿ\s,\.]+$', l):
+                    i += 1
+                    continue
+
+            # Pula tipo de vínculo, UI, prefixos e formato combinado
+            if l_lower in TIPOS_VINCULO or _e_vinculo_com_duracao(l):
                 i += 1
                 continue
             if any(l_lower.startswith(p) for p in SKIP_PREFIXOS):
@@ -446,7 +474,7 @@ def _parse_experiencias_inner_text(linhas: list[str]) -> list[dict]:
                     veio_pos_competencias = True
                 i += 1
                 continue
-            # Pula localização (contém "·" mas NÃO é período — já tratado acima)
+            # Pula localização com "·" (ex: "Fortaleza, CE · Presencial")
             if "·" in l:
                 i += 1
                 continue
@@ -460,11 +488,13 @@ def _parse_experiencias_inner_text(linhas: list[str]) -> list[dict]:
                 break
             veio_pos_competencias = False
 
-            # Nova empresa: próxima linha é duração total
+            # Nova empresa: próxima linha é duração total ou vínculo combinado
             prox_e_duracao = False
             for j in range(i + 1, min(i + 4, len(linhas))):
                 if linhas[j].strip():
-                    prox_e_duracao = _e_duracao(linhas[j]) and not _e_periodo(linhas[j])
+                    nxt_j = linhas[j]
+                    prox_e_duracao = ((_e_duracao(nxt_j) and not _e_periodo(nxt_j))
+                                      or _e_vinculo_com_duracao(nxt_j))
                     break
             if prox_e_duracao:
                 break
