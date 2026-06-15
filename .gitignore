@@ -1,0 +1,25 @@
+# Credenciais e segredos
+.env
+
+# Ambiente virtual
+.venv/
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Banco de dados e sessão
+data/sessao_linkedin/
+data/linkedin_profile.db
+
+# Logs e saídas geradas
+coleta.log
+output/
+
+# IDEs
+.idea/
+.vscode/
+
+# Arquivos PDF (dados pessoais)
+*.pdf
