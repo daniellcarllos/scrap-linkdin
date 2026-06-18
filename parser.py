@@ -858,62 +858,107 @@ def _parse_projetos_inner_text(linhas: list[str]) -> list[dict]:
 
 def _parse_publicacoes_inner_text(linhas: list[str]) -> list[dict]:
     """
-    Analisa o bloco de atividade recente / publicações do LinkedIn.
+    Analisa o bloco de atividade recente do LinkedIn (/recent-activity/all/).
 
-    Posts são delimitados por clusters de botões de reação:
-    "Curtir · Comentar · Republicar · Enviar"
-
-    Coleta blocos de texto entre esses delimitadores como publicações.
+    Cada post é delimitado por "Número da publicação no feed N".
+    O corpo começa após a linha "Visível a todos, dentro ou fora do LinkedIn"
+    e termina na seção de hashtags ("hashtag") ou botões de reação.
     """
     FOOTER_TOKENS = {"idioma do perfil", "sobre", "acessibilidade", "linkedin corporation"}
-    REACAO_TOKENS = {"curtir", "comentar", "republicar", "enviar", "reagir", "seguir"}
-    SKIP_TOKENS = {"ver mais", "ver menos", "… mais", "mostrar mais",
-                   "ver todas as atividades", "atividade recente", "mostrar todas"}
-    NAV = {"início", "minha rede", "vagas", "mensagens", "notificações",
-           "para negócios", "learning", "publicar", "eu"}
+    REACAO_TOKENS = {"gostei", "curtir", "comentar", "compartilhar", "republicar", "enviar", "reagir"}
 
-    # Pula nav até o primeiro post
-    i = 0
-    while i < len(linhas) and (
-        linhas[i].lower() in NAV
-        or linhas[i].isdigit()
-        or linhas[i] == "·"
-        or linhas[i].lower() in SKIP_TOKENS
-    ):
-        i += 1
-    # Pula nome e título do perfil (primeiras 2 linhas com texto)
-    skip = 0
-    while i < len(linhas) and skip < 2:
-        if linhas[i].strip():
-            skip += 1
-        i += 1
+    _RE_PERIODO_PUB = re.compile(
+        r"há\s+\d+\s+(semanas?|meses?|dias?|horas?|minutos?)", re.I
+    )
 
-    publicacoes = []
+    def _extrair_post(bloco: list[str]) -> dict | None:
+        """
+        Extrai corpo e data de um bloco de linhas de um único post.
+
+        Estrutura real do bloco (após o delimitador "Número da publicação..."):
+          [Nome repetido, cargo, timestamp, • Você, espaços]
+          "Há 2 semanas • Editado • Visível a todos, dentro ou fora do LinkedIn"
+          [CORPO DO POST — texto, emojis, bullets]
+          "hashtag"           ← início da seção de tags
+          "#Vaga"
+          ...
+          "Gostei / Comentar / ..."  ← reações (fim do bloco)
+        """
+        corpo: list[str] = []
+        data_pub: str | None = None
+        encontrou_inicio = False
+
+        for l in bloco:
+            ll = l.lower().strip()
+
+            # Captura data antes de encontrar o início do corpo
+            if not data_pub and _RE_PERIODO_PUB.search(ll):
+                m = _RE_PERIODO_PUB.search(ll)
+                data_pub = ll[m.start():].split("•")[0].strip()
+
+            # Marcador de início: linha de visibilidade após timestamp
+            if not encontrou_inicio:
+                if "visível" in ll and ("todos" in ll or "linkedin" in ll):
+                    encontrou_inicio = True
+                continue
+
+            # Fim: palavra "hashtag" solta (precede "#Tag")
+            if ll == "hashtag":
+                break
+            # Fim: linha que começa com "#" (hashtag direto)
+            if re.match(r'^#\w', l):
+                break
+            # Fim: botões de reação
+            if ll in REACAO_TOKENS:
+                break
+            # Fim: "…mais", "Ative para ver a imagem maior"
+            if ll in ("…mais", "ative para ver a imagem maior"):
+                break
+            # Skip: linhas com apenas dígitos (contadores de curtidas)
+            if l.strip().isdigit():
+                continue
+            # Skip: "X comentários", "Y compartilhamentos"
+            if re.match(r'^\d+\s+(comentário|compartilhamento|reação)', ll):
+                continue
+
+            if l.strip():
+                corpo.append(l.strip())
+
+        if not encontrou_inicio or not corpo:
+            return None
+
+        texto = "\n".join(corpo).strip()
+        return {"conteudo": texto, "data_publicacao": data_pub} if len(texto) > 50 else None
+
+    # ── Localiza início dos posts ────────────────────────────────
+    publicacoes: list[dict] = []
     bloco_atual: list[str] = []
+    em_posts = False
 
-    while i < len(linhas):
-        l = linhas[i]
-        l_lower = l.lower().strip()
-        i += 1
+    for l in linhas:
+        ll = l.lower().strip()
 
-        if l_lower in FOOTER_TOKENS:
+        if ll in FOOTER_TOKENS:
             break
-        if not l or l_lower in SKIP_TOKENS or l.isdigit():
-            continue
-        if l_lower in REACAO_TOKENS or "curtidas" in l_lower or "comentários" in l_lower:
-            # Fim de um post — salva bloco se tiver conteúdo relevante
-            conteudo = " ".join(bloco_atual).strip()
-            if conteudo and len(conteudo) > 30:
-                publicacoes.append({"conteudo": conteudo, "data_publicacao": None})
+
+        # Delimitador de início de post
+        if "número da publicação no feed" in ll:
+            if em_posts and bloco_atual:
+                resultado = _extrair_post(bloco_atual)
+                if resultado:
+                    publicacoes.append(resultado)
             bloco_atual = []
+            em_posts = True
             continue
 
-        bloco_atual.append(l)
+        if em_posts:
+            bloco_atual.append(l)
 
-    # Captura último bloco
-    conteudo = " ".join(bloco_atual).strip()
-    if conteudo and len(conteudo) > 30:
-        publicacoes.append({"conteudo": conteudo, "data_publicacao": None})
+    # Último bloco
+    if bloco_atual:
+        resultado = _extrair_post(bloco_atual)
+        if resultado:
+            publicacoes.append(resultado)
 
     return publicacoes
 
