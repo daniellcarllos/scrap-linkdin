@@ -795,21 +795,36 @@ def _parse_projetos_inner_text(linhas: list[str]) -> list[dict]:
     """
     Analisa o bloco da sub-página /details/projects/ do LinkedIn.
 
-    Estrutura real:
+    Estrutura real (quando há múltiplos projetos):
       Projetos                          ← marcador (skip)
-      Nome do Projeto                   ← título
+      Nome do Projeto 1                 ← título
+      fev de 2022 – o momento           ← período (logo após o título)
+      Associados a 3e Soluções          ← afiliação (skip)
       Descrição linha 1                 ← descrição (pode ser multi-linha)
-      Resultados:
-      - item 1
       Tecnologias: Python, LLMs, AWS    ← extraído para campo próprio
-      [próximo projeto ou footer]
+      Competências: ...                ← skip
+      Nome do Projeto 2                 ← novo título — detectado por lookahead:
+      ago de 2015 – o momento             a linha seguinte É um período
+      ...
+
+    Cada projeto é delimitado pela heurística: uma linha de título é sempre
+    seguida (a 1-2 linhas de distância) por uma linha de período. Sem essa
+    detecção, todos os projetos da página são fundidos em um só registro.
     """
     FOOTER_TOKENS = {"idioma do perfil", "sobre", "acessibilidade", "linkedin corporation"}
+    SKIP_PREFIXOS = ("associados a", "competências:", "skills:")
 
     i = 0
     while i < len(linhas) and linhas[i].lower() not in ("projetos", "projects"):
         i += 1
     i += 1  # pula marcador
+
+    def _prox_e_periodo(idx: int) -> bool:
+        """Verifica se a próxima linha não vazia a partir de idx é um período."""
+        for j in range(idx, min(idx + 3, len(linhas))):
+            if linhas[j].strip():
+                return _e_periodo(linhas[j])
+        return False
 
     projetos = []
     while i < len(linhas):
@@ -833,6 +848,9 @@ def _parse_projetos_inner_text(linhas: list[str]) -> list[dict]:
             l_lower = l.lower()
             if l_lower in FOOTER_TOKENS:
                 break
+            if not l:
+                i += 1
+                continue
             if _e_periodo(l):
                 if not periodo:
                     periodo = l.strip()
@@ -842,8 +860,17 @@ def _parse_projetos_inner_text(linhas: list[str]) -> list[dict]:
                 tecnologias = l[len("tecnologias:"):].strip()
                 i += 1
                 continue
-            if l:
-                desc_linhas.append(l)
+            if any(l_lower.startswith(p) for p in SKIP_PREFIXOS):
+                i += 1
+                continue
+
+            # Início de um NOVO projeto: só verifica depois que já temos um
+            # período (ou seja, já estamos coletando a descrição) e a
+            # próxima linha não vazia é, ela sim, um período.
+            if periodo and _prox_e_periodo(i + 1):
+                break
+
+            desc_linhas.append(l)
             i += 1
 
         projetos.append({
