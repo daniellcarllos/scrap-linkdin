@@ -249,7 +249,7 @@ def salvar_dados_brutos(perfil_id: int, origem: str, conteudo: str, dados_json: 
         conn.execute(sql, (
             perfil_id,
             origem,
-            conteudo[:50_000],          # limita tamanho do raw
+            conteudo[:200_000],         # limita tamanho do raw (perfis com muitas publicações/artigos passam de 50k)
             json.dumps(dados_json, ensure_ascii=False),
             datetime.now().isoformat(),
         ))

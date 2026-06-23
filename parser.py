@@ -1001,97 +1001,62 @@ def _parse_artigos_inner_text(linhas: list[str]) -> list[dict]:
     """
     Analisa o bloco de artigos do LinkedIn (/recent-activity/articles/).
 
-    Os artigos aparecem no mesmo feed-card usado para posts (delimitado por
-    "Número da publicação no feed N"), mas com título destacado e indicador
-    de tempo de leitura ("N min de leitura") em vez do corpo completo do post.
-
-    NOTA: estrutura inferida por analogia com o parser de publicações —
-    como ainda não há captura real desta seção, deve ser validada/ajustada
-    após a primeira coleta com artigos publicados.
+    Estrutura real (bem diferente da listagem de posts):
+      "N Artigos publicações carregadas"     ← marcador de início da lista
+      Título do artigo 1
+      Resumo truncado (aparece DUPLICADO no DOM, linha repetida)
+      "por Nome do Autor • X min de leitura" ← delimitador confiável de cada artigo
+      Título do artigo 2
+      ...
+      "Pessoas que talvez você conheça"      ← fim da seção (sugestões de conexão)
     """
-    FOOTER_TOKENS = {"idioma do perfil", "sobre", "acessibilidade", "linkedin corporation"}
-    REACAO_TOKENS = {"gostei", "curtir", "comentar", "compartilhar", "republicar", "enviar", "reagir"}
-    _RE_LEITURA = re.compile(r"^\d+\s*min\s+de\s+leitura", re.I)
-    _RE_VISIBILIDADE = re.compile(r"há\s+\d+\s+(semanas?|meses?|dias?|horas?|minutos?)", re.I)
+    FIM_TOKENS = {
+        "pessoas que talvez você conheça", "da sua instituição de ensino",
+        "sobre", "acessibilidade", "central de ajuda", "idioma do perfil",
+        "linkedin corporation",
+    }
+    _RE_AUTOR = re.compile(r"^por\s+.+?\s*[•·]\s*(\d+\s*min\s+de\s+leitura)", re.I)
+    _RE_MARCADOR = re.compile(r"artigos?\s+publicaç", re.I)
 
-    def _extrair_artigo(bloco: list[str]) -> dict | None:
-        titulo = None
-        tempo_leitura = None
-        data_pub = None
-        resumo_linhas: list[str] = []
-
-        for l in bloco:
-            ll = l.lower().strip()
-
-            if not l.strip():
-                continue
-            if ll in REACAO_TOKENS:
-                break
-            if ll in ("…mais", "ative para ver a imagem maior"):
-                continue
-            if l.strip().isdigit():
-                continue
-            if re.match(r'^\d+\s+(comentário|compartilhamento|reação)', ll):
-                continue
-
-            m_leitura = _RE_LEITURA.match(ll)
-            if m_leitura:
-                tempo_leitura = l.strip()
-                continue
-
-            if not data_pub and _RE_VISIBILIDADE.search(ll):
-                m = _RE_VISIBILIDADE.search(ll)
-                data_pub = ll[m.start():].split("•")[0].strip()
-
-            if "visível" in ll and ("todos" in ll or "linkedin" in ll):
-                continue
-            if _RE_VISIBILIDADE.match(ll):
-                continue
-
-            # Primeira linha de conteúdo substancial é o título do artigo
-            if not titulo and len(l.strip()) > 10:
-                titulo = l.strip()
-                continue
-
-            if titulo:
-                resumo_linhas.append(l.strip())
-
-        if not titulo:
-            return None
-
-        return {
-            "titulo": titulo,
-            "resumo": " ".join(resumo_linhas).strip() or None,
-            "tempo_leitura": tempo_leitura,
-            "data_publicacao": data_pub,
-        }
+    # Pula nav até o marcador "N Artigos publicações carregadas"
+    i = 0
+    while i < len(linhas) and not _RE_MARCADOR.search(linhas[i]):
+        i += 1
+    i += 1  # pula o próprio marcador
 
     artigos: list[dict] = []
-    bloco_atual: list[str] = []
-    em_posts = False
+    titulo_atual: str | None = None
+    resumo_linhas: list[str] = []
 
-    for l in linhas:
-        ll = l.lower().strip()
+    while i < len(linhas):
+        l = linhas[i]
+        l_lower = l.lower().strip()
+        i += 1
 
-        if ll in FOOTER_TOKENS:
+        if l_lower in FIM_TOKENS:
             break
 
-        if "número da publicação no feed" in ll:
-            if em_posts and bloco_atual:
-                resultado = _extrair_artigo(bloco_atual)
-                if resultado:
-                    artigos.append(resultado)
-            bloco_atual = []
-            em_posts = True
+        m_autor = _RE_AUTOR.match(l.strip())
+        if m_autor:
+            if titulo_atual:
+                artigos.append({
+                    "titulo": titulo_atual,
+                    "resumo": " ".join(resumo_linhas).strip() or None,
+                    "tempo_leitura": m_autor.group(1).strip(),
+                    "data_publicacao": None,
+                })
+            titulo_atual = None
+            resumo_linhas = []
             continue
 
-        if em_posts:
-            bloco_atual.append(l)
+        if titulo_atual is None:
+            titulo_atual = l.strip()
+            continue
 
-    if bloco_atual:
-        resultado = _extrair_artigo(bloco_atual)
-        if resultado:
-            artigos.append(resultado)
+        # LinkedIn duplica a linha de resumo no DOM — pula repetição consecutiva
+        if resumo_linhas and resumo_linhas[-1] == l.strip():
+            continue
+        resumo_linhas.append(l.strip())
 
     return artigos
 
