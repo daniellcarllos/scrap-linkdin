@@ -185,6 +185,14 @@ def _capturar_perfil(page, url: str) -> str:
         secoes_coletadas["publicacoes"] = texto_pub
         logger.info("  → %d caracteres de publicações capturados.", len(texto_pub))
 
+    # 4. Artigos escritos pelo usuário (LinkedIn Articles)
+    url_artigos = f"{url_base}/recent-activity/articles/"
+    logger.info("Capturando artigos: %s", url_artigos)
+    texto_artigos = _get_inner_text_com_scroll(page, url_artigos)
+    if texto_artigos:
+        secoes_coletadas["artigos"] = texto_artigos
+        logger.info("  → %d caracteres de artigos capturados.", len(texto_artigos))
+
     # Monta o texto anotado que o parser vai processar
     partes = [
         "<!-- LINKEDIN_INNER_TEXT_START -->",
@@ -196,6 +204,8 @@ def _capturar_perfil(page, url: str) -> str:
             partes.append(f"\n[SECAO:{nome.upper()}]\n{secoes_coletadas[slug]}")
     if "publicacoes" in secoes_coletadas:
         partes.append(f"\n[SECAO:PUBLICAÇÕES]\n{secoes_coletadas['publicacoes']}")
+    if "artigos" in secoes_coletadas:
+        partes.append(f"\n[SECAO:ARTIGOS]\n{secoes_coletadas['artigos']}")
     partes.append("</linkedin-text>")
     partes.append("<!-- LINKEDIN_INNER_TEXT_END -->")
 

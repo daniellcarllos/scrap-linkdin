@@ -373,7 +373,8 @@ def acao_sintetizar_projetos(perfil_id: int | None) -> None:
     console.print(f"  Perfil: [cyan]{dados.get('nome')}[/cyan] (coleta id={dados['id']})")
     console.print(f"  Experiências: {len(dados.get('experiencias', []))} | "
                   f"Projetos: {len(dados.get('projetos', []))} | "
-                  f"Publicações: {len(dados.get('publicacoes', []))}")
+                  f"Publicações: {len(dados.get('publicacoes', []))} | "
+                  f"Artigos: {len(dados.get('artigos', []))}")
     console.print()
 
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()

@@ -80,6 +80,11 @@ def carregar_coleta(perfil_id: int) -> dict:
                 "SELECT * FROM publicacoes WHERE perfil_id = ?", (perfil_id,)
             ).fetchall()
         ]
+        dados["artigos"] = [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM artigos WHERE perfil_id = ?", (perfil_id,)
+            ).fetchall()
+        ]
 
     return dados
 

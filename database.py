@@ -84,6 +84,15 @@ def criar_tabelas() -> None:
         data_publicacao  TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS artigos (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        perfil_id        INTEGER NOT NULL REFERENCES perfil(id) ON DELETE CASCADE,
+        titulo           TEXT,
+        resumo           TEXT,
+        tempo_leitura    TEXT,
+        data_publicacao  TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS projetos_ia (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         perfil_id    INTEGER NOT NULL REFERENCES perfil(id) ON DELETE CASCADE,
@@ -183,6 +192,17 @@ def salvar_publicacoes(perfil_id: int, lista: list[dict]) -> None:
     logger.info("%d publicação(ões) salva(s).", len(rows))
 
 
+def salvar_artigos(perfil_id: int, lista: list[dict]) -> None:
+    sql = """
+        INSERT INTO artigos (perfil_id, titulo, resumo, tempo_leitura, data_publicacao)
+        VALUES (:perfil_id, :titulo, :resumo, :tempo_leitura, :data_publicacao)
+    """
+    rows = [{**a, "perfil_id": perfil_id} for a in lista]
+    with get_connection() as conn:
+        conn.executemany(sql, rows)
+    logger.info("%d artigo(s) salvo(s).", len(rows))
+
+
 def salvar_sintese_projetos(perfil_id: int, modelo: str, resultado: dict, markdown: str) -> int:
     """Salva resultado da síntese de projetos por IA."""
     sql = """
@@ -263,6 +283,8 @@ def salvar_coleta_completa(dados: dict, origem: str, conteudo_bruto: str) -> int
         salvar_projetos(perfil_id, dados["projetos"])
     if dados.get("publicacoes"):
         salvar_publicacoes(perfil_id, dados["publicacoes"])
+    if dados.get("artigos"):
+        salvar_artigos(perfil_id, dados["artigos"])
 
     salvar_dados_brutos(perfil_id, origem, conteudo_bruto, dados)
     return perfil_id

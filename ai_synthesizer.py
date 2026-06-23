@@ -5,6 +5,7 @@ Gera conteúdo estruturado para o currículo a partir de:
   - Experiências profissionais (descrições ricas do LinkedIn)
   - Projetos registrados na seção /details/projects/
   - Publicações recentes (posts do perfil)
+  - Artigos escritos (LinkedIn Articles — maior profundidade que posts)
   - Competências e resumo do perfil
 
 Organiza os impactos em três dimensões:
@@ -345,6 +346,23 @@ def sintetizar_projetos_heuristico(dados_perfil: dict) -> dict:
             "tecnologias": [],
         })
 
+    # 4. Artigos escritos (sinal mais forte de autoridade técnica que posts)
+    for art in dados_perfil.get("artigos", [])[:5]:
+        titulo = art.get("titulo", "")
+        resumo = art.get("resumo") or ""
+        texto_completo = f"{titulo} {resumo}"
+        if len(texto_completo) < 40:
+            continue
+        cat = _detectar(texto_completo)
+        projetos_out.append({
+            "titulo":      "Artigo — " + titulo,
+            "contexto":    art.get("tempo_leitura") or "",
+            "descricao":   resumo[:350] or titulo,
+            "categoria":   cat,
+            "impactos":    [],
+            "tecnologias": [],
+        })
+
     resumo = {
         "ia": (
             "Atuação em projetos de Inteligência Artificial e automação inteligente, "
@@ -408,5 +426,14 @@ def _montar_contexto(dados: dict) -> str:
             conteudo = pub.get("conteudo", "")[:350]
             if conteudo:
                 linhas.append(f"\n---\n{conteudo}")
+
+    artigos = dados.get("artigos", [])
+    if artigos:
+        linhas += ["", "### Artigos Escritos (LinkedIn Articles — maior profundidade técnica que posts)"]
+        for art in artigos[:8]:
+            titulo = art.get("titulo", "")
+            resumo = (art.get("resumo") or "")[:400]
+            tempo = art.get("tempo_leitura") or ""
+            linhas.append(f"\n---\n**{titulo}** {f'({tempo})' if tempo else ''}\n{resumo}")
 
     return "\n".join(linhas)

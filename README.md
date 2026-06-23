@@ -10,7 +10,7 @@ Ferramenta Python para coletar, organizar e armazenar dados do **próprio** perf
 
 - **Coleta via navegador (Playwright)** — login automático ou interativo, sessão salva entre execuções
 - **Parser robusto para SPA React** — extrai dados de `inner_text`, já que o LinkedIn não expõe HTML estável
-- **Seções coletadas:** Experiência, Formação, Competências, Certificações, Projetos e Publicações recentes
+- **Seções coletadas:** Experiência, Formação, Competências, Certificações, Projetos, Publicações recentes e Artigos escritos
 - **Banco SQLite com histórico** — cada coleta é versionada; permite comparar mudanças do perfil ao longo do tempo
 - **Síntese de "Projetos Executados e Impactos" por IA** — usa Claude (`claude-sonnet-4-6`) para gerar uma seção de currículo organizada por **Inteligência Artificial · Agilidade · Gestão de Equipes**, com fallback heurístico (sem API key) por palavras-chave
 - **Geração de currículo** em Markdown, JSON e TXT
@@ -84,7 +84,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ### Coleta completa via navegador (recomendada)
 
-Faz login automático com as credenciais do `.env`, navega pelas sub-páginas do perfil (`/details/experience/`, `/details/skills/`, `/details/certifications/`, `/details/projects/`, `/recent-activity/all/`) e salva tudo no banco.
+Faz login automático com as credenciais do `.env`, navega pelas sub-páginas do perfil (`/details/experience/`, `/details/skills/`, `/details/certifications/`, `/details/projects/`, `/recent-activity/all/`, `/recent-activity/articles/`) e salva tudo no banco.
 
 ```bash
 python main.py --url https://www.linkedin.com/in/seu-usuario --login
@@ -117,7 +117,9 @@ python main.py --arquivo perfil.txt
 
 ## Síntese de Projetos Executados e Impactos (IA)
 
-Gera uma seção de currículo a partir de experiências, projetos e publicações, organizada em três dimensões: **Inteligência Artificial**, **Agilidade**, **Gestão de Equipes**.
+Gera uma seção de currículo a partir de experiências, projetos, publicações e artigos escritos, organizada em três dimensões: **Inteligência Artificial**, **Agilidade**, **Gestão de Equipes**.
+
+> Artigos do LinkedIn (`/recent-activity/articles/`) têm peso maior que posts comuns na síntese, por demonstrarem profundidade técnica e autoria mais elaborada.
 
 ```bash
 python main.py --projetos --coleta <id>
@@ -172,6 +174,7 @@ O banco é criado automaticamente em `data/linkedin_profile.db`.
 | `certificacoes` | Certificados e licenças                             |
 | `projetos`      | Projetos registrados em `/details/projects/`        |
 | `publicacoes`   | Posts recentes do perfil (`/recent-activity/all/`)  |
+| `artigos`       | Artigos escritos pelo perfil (`/recent-activity/articles/`) |
 | `projetos_ia`   | Sínteses geradas (JSON + Markdown) por coleta       |
 | `dados_brutos`  | Texto bruto original e JSON extraído                |
 
