@@ -17,6 +17,7 @@ que triam currículos antes de chegar a um recrutador humano):
 """
 
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -82,14 +83,42 @@ def _estilos() -> dict:
 
 
 def _escape(texto: str | None) -> str:
-    """Escapa caracteres especiais do XML usado pelo Paragraph do reportlab."""
+    """
+    Normaliza Unicode e escapa caracteres especiais do XML usado pelo
+    Paragraph do reportlab.
+
+    O texto raspado do LinkedIn às vezes vem em forma NFD (ex.: "ç" como
+    "c" + acento combinante U+0327, em vez do caractere composto U+00E7).
+    A fonte padrão Helvetica não reconhece o acento isolado e renderiza um
+    glifo quebrado (ex.: "Avanc■ado"). Normalizar para NFC resolve isso.
+    """
     if not texto:
         return ""
+    texto = unicodedata.normalize("NFC", texto)
     return (
         texto.replace("&", "&amp;")
              .replace("<", "&lt;")
              .replace(">", "&gt;")
     )
+
+
+def _dividir_bullets(desc: str) -> list[str]:
+    """
+    Divide uma descrição em itens de bullet.
+
+    O parser do LinkedIn junta os bullets de uma experiência com espaço,
+    mantendo o caractere "•" original inline (ex.: "...trabalho. •
+    Cultura e Desenvolvimento..."), em vez de quebras de linha reais.
+    Sem tratar esse caso, o texto vira um único parágrafo gigante em vez
+    de bullets discretos — ruim tanto para leitura humana quanto para ATS.
+    """
+    if not desc:
+        return []
+    if "\n" in desc:
+        partes = desc.split("\n")
+    else:
+        partes = re.split(r"\s*•\s*", desc)
+    return [p.strip().lstrip("•-·").strip() for p in partes if p.strip()]
 
 
 def _md_inline(texto: str) -> str:
@@ -120,6 +149,12 @@ def _markdown_para_flowables(md: str, estilos: dict) -> list:
             continue  # título da seção já é adicionado pelo chamador
         if linha.startswith("- "):
             flowables.append(Paragraph(f"- {_md_inline(linha[2:])}", estilos["bullet"]))
+            continue
+        # Linhas de descrição no modo heurístico (sem API) carregam bullets
+        # "•" inline em vez de markdown — trata como no resto do currículo.
+        if "•" in linha:
+            for item in _dividir_bullets(linha):
+                flowables.append(Paragraph(f"- {_md_inline(item)}", estilos["bullet"]))
             continue
         flowables.append(Paragraph(_md_inline(linha), estilos["corpo"]))
     return flowables
@@ -180,10 +215,8 @@ def gerar_curriculo_pdf(dados: dict, dados_contato: dict | None = None, salvar: 
             if periodo:
                 elementos.append(Paragraph(_escape(periodo), estilos["meta"]))
             desc = exp.get("descricao") or ""
-            for linha in desc.split("\n"):
-                linha = linha.strip().lstrip("•-·").strip()
-                if linha:
-                    elementos.append(Paragraph(f"- {_escape(linha)}", estilos["bullet"]))
+            for item in _dividir_bullets(desc):
+                elementos.append(Paragraph(f"- {_escape(item)}", estilos["bullet"]))
             elementos.append(Spacer(1, 6))
 
     if dados.get("formacoes"):

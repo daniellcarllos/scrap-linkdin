@@ -256,7 +256,12 @@ def _parse_inner_text_linkedin(texto: str, url: str = "") -> dict:
 
 
 def _filtrar_endorsers_competencias(dados: dict) -> None:
-    """Remove nomes de certs e instituições que aparecem como endorsers de skills."""
+    """
+    Remove ruído da lista de competências:
+      - nomes de certs e instituições que aparecem como endorsers de skills
+      - nomes de projetos usados como "evidência" de uma skill
+      - texto de UI do LinkedIn, ex: "4 experiências na empresa 3e Soluções"
+    """
     exclusoes: set[str] = set()
     for c in dados.get("certificacoes", []):
         if c.get("nome"):
@@ -264,9 +269,15 @@ def _filtrar_endorsers_competencias(dados: dict) -> None:
     for f in dados.get("formacoes", []):
         if f.get("instituicao"):
             exclusoes.add(f["instituicao"].lower())
+    for p in dados.get("projetos", []):
+        if p.get("titulo"):
+            exclusoes.add(p["titulo"].lower())
+
+    _RE_EXPERIENCIAS_UI = re.compile(r"^\d+\s+experiências?\s+na\s+empresa", re.I)
+
     dados["competencias"] = [
         c for c in dados.get("competencias", [])
-        if c.lower() not in exclusoes
+        if c.lower() not in exclusoes and not _RE_EXPERIENCIAS_UI.match(c.strip())
     ]
 
 
