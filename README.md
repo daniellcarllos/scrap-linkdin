@@ -13,7 +13,8 @@ Ferramenta Python para coletar, organizar e armazenar dados do **próprio** perf
 - **Seções coletadas:** Experiência, Formação, Competências, Certificações, Projetos, Publicações recentes e Artigos escritos
 - **Banco SQLite com histórico** — cada coleta é versionada; permite comparar mudanças do perfil ao longo do tempo
 - **Síntese de "Projetos Executados e Impactos" por IA** — usa Claude (`claude-sonnet-4-6`) para gerar uma seção de currículo organizada por **Inteligência Artificial · Agilidade · Gestão de Equipes**, com fallback heurístico (sem API key) por palavras-chave
-- **Geração de currículo** em Markdown, JSON e TXT
+- **Geração de currículo** em Markdown, JSON, TXT e **PDF otimizado para ATS**
+- **Cadastro de dados pessoais** (telefone, email, site/portfólio) com confirmação antes de salvar — usado no PDF
 - **Exportação CSV** via pandas
 
 ---
@@ -27,6 +28,7 @@ scrap-linkdin/
 ├── scraper_browser.py   # Coleta via Playwright (login + navegação de sub-páginas)
 ├── parser.py            # Extração de dados do inner_text do LinkedIn (SPA)
 ├── ai_synthesizer.py     # Síntese de Projetos Executados via Claude API / heurística
+├── pdf_generator.py      # Geração de currículo em PDF otimizado para ATS (reportlab)
 ├── database.py          # Persistência SQLite
 ├── queries.py            # Consultas e geração de currículo
 ├── exemplos_sql.sql      # Consultas SQL de referência
@@ -132,6 +134,30 @@ A síntese é salva no banco e incluída **automaticamente** na próxima geraç�
 
 ---
 
+## Currículo em PDF (otimizado para ATS)
+
+```bash
+python main.py --curriculo pdf
+```
+
+Gera um PDF pensado para passar por **Applicant Tracking Systems** (sistemas que triam currículos antes de chegar a um recrutador humano):
+
+- Layout em coluna única, sem tabelas de posicionamento ou caixas de texto
+- Fonte padrão (Helvetica), sem decorações ou imagens
+- Texto sempre selecionável — nunca uma imagem do currículo
+- Dados de contato em texto corrido no topo (nunca em cabeçalho/rodapé, que muitos ATS ignoram)
+- Bullets com `-` simples em vez de símbolos Unicode decorativos
+
+### Cadastro de dados pessoais
+
+Antes de gerar o PDF, o comando pede telefone, email e site/portfólio (cidade/estado é opcional):
+
+- Se já houver dados salvos, eles são exibidos e você escolhe se quer atualizá-los
+- Qualquer alteração é **sempre confirmada** antes de ser salva no banco
+- Os dados ficam na tabela `dados_pessoais` (independente de coleta) e são reutilizados nas próximas gerações
+
+---
+
 ## Consultas e exportações
 
 ```bash
@@ -146,6 +172,9 @@ python main.py --curriculo json
 
 # Gerar currículo em texto simples
 python main.py --curriculo txt
+
+# Gerar currículo em PDF otimizado para ATS (pede confirmação de telefone/email/site)
+python main.py --curriculo pdf
 
 # Exportar para CSV (requer pandas)
 python main.py --csv
@@ -177,6 +206,7 @@ O banco é criado automaticamente em `data/linkedin_profile.db`.
 | `artigos`       | Artigos escritos pelo perfil (`/recent-activity/articles/`) |
 | `projetos_ia`   | Sínteses geradas (JSON + Markdown) por coleta       |
 | `dados_brutos`  | Texto bruto original e JSON extraído                |
+| `dados_pessoais`| Telefone, email, site/portfólio, cidade/estado (tabela singleton, independente de coleta) |
 
 ### Consultar diretamente
 
