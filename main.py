@@ -32,12 +32,14 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
 from rich import print as rprint
 
 import os
 
 import database
 import parser as lk_parser
+import pdf_generator
 import queries
 import scraper
 import scraper_browser
@@ -112,8 +114,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Lista todas as coletas armazenadas.",
     )
     ap.add_argument(
-        "--curriculo", choices=["md", "json", "txt"],
-        help="Gera arquivo de currículo no formato indicado.",
+        "--curriculo", choices=["md", "json", "txt", "pdf"],
+        help=(
+            "Gera arquivo de currículo no formato indicado.\n"
+            "'pdf' segue boas práticas de ATS e pede confirmação dos dados "
+            "pessoais de contato (telefone, email, site/portfólio) antes de gerar."
+        ),
     )
     ap.add_argument(
         "--csv", action="store_true",
@@ -345,6 +351,79 @@ def acao_listar() -> None:
     console.print(table)
 
 
+def obter_dados_pessoais_confirmados() -> dict:
+    """
+    Garante que os dados pessoais de contato (telefone, email, site/portfólio,
+    cidade/estado) estejam disponíveis antes de gerar o PDF.
+
+    Sempre pergunta se o usuário quer atualizar os dados já cadastrados, e
+    sempre exibe um resumo para confirmação antes de salvar qualquer alteração
+    no banco.
+    """
+    atuais = database.carregar_dados_pessoais()
+
+    if atuais:
+        console.print("\n[bold]Dados pessoais cadastrados atualmente:[/bold]")
+        console.print(f"  Telefone       : {atuais.get('telefone') or '—'}")
+        console.print(f"  Email          : {atuais.get('email') or '—'}")
+        console.print(f"  Site/Portfólio : {atuais.get('site_portfolio') or '—'}")
+        console.print(f"  Cidade/Estado  : {atuais.get('cidade_estado') or '—'}")
+        console.print(f"  Atualizado em  : {atuais.get('atualizado_em') or '—'}\n")
+
+        if not Confirm.ask("Deseja atualizar esses dados antes de gerar o currículo?", default=False):
+            return atuais
+    else:
+        console.print(
+            "\n[yellow]Nenhum dado pessoal cadastrado ainda. "
+            "Vamos cadastrar agora para incluir no PDF.[/yellow]\n"
+        )
+
+    base = atuais or {}
+    telefone = Prompt.ask("Telefone (com DDD)", default=base.get("telefone") or "")
+    email = Prompt.ask("Email", default=base.get("email") or "")
+    site = Prompt.ask("Site / Portfólio (opcional)", default=base.get("site_portfolio") or "")
+    cidade = Prompt.ask("Cidade/Estado (opcional)", default=base.get("cidade_estado") or "")
+
+    novos = {
+        "telefone":       telefone.strip() or None,
+        "email":          email.strip() or None,
+        "site_portfolio": site.strip() or None,
+        "cidade_estado":  cidade.strip() or None,
+    }
+
+    console.print("\n[bold]Confirme os dados antes de salvar:[/bold]")
+    console.print(f"  Telefone       : {novos['telefone'] or '—'}")
+    console.print(f"  Email          : {novos['email'] or '—'}")
+    console.print(f"  Site/Portfólio : {novos['site_portfolio'] or '—'}")
+    console.print(f"  Cidade/Estado  : {novos['cidade_estado'] or '—'}\n")
+
+    if Confirm.ask("Salvar estes dados no banco?", default=True):
+        database.salvar_dados_pessoais(novos)
+        console.print("[green]Dados pessoais salvos.[/green]\n")
+        return novos
+
+    console.print("[yellow]Alterações descartadas — usando dados anteriores (se houver).[/yellow]\n")
+    return atuais or novos
+
+
+def acao_gerar_pdf(perfil_id: int | None) -> None:
+    """Gera o currículo em PDF otimizado para ATS, com cadastro/confirmação de contato."""
+    try:
+        dados = queries.carregar_coleta(perfil_id) if perfil_id else queries.carregar_ultima_coleta()
+    except ValueError as exc:
+        console.print(f"[bold red]{exc}")
+        sys.exit(1)
+
+    dados_contato = obter_dados_pessoais_confirmados()
+
+    sintese = database.carregar_sintese_projetos(dados["id"])
+    if sintese:
+        dados["_sintese_markdown"] = sintese["markdown"]
+
+    caminho = pdf_generator.gerar_curriculo_pdf(dados, dados_contato)
+    console.print(f"  Arquivo salvo: {caminho}")
+
+
 def acao_curriculo(fmt: str, perfil_id: int | None) -> None:
     console.rule(f"[bold blue]Gerando currículo — formato {fmt.upper()}")
     try:
@@ -354,6 +433,8 @@ def acao_curriculo(fmt: str, perfil_id: int | None) -> None:
             queries.gerar_curriculo_json(perfil_id)
         elif fmt == "txt":
             queries.gerar_curriculo_txt(perfil_id)
+        elif fmt == "pdf":
+            acao_gerar_pdf(perfil_id)
     except ValueError as exc:
         console.print(f"[bold red]{exc}")
         sys.exit(1)

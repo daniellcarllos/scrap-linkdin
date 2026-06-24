@@ -110,6 +110,15 @@ def criar_tabelas() -> None:
         json_extraido TEXT,
         data_coleta   TEXT    NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS dados_pessoais (
+        id              INTEGER PRIMARY KEY CHECK (id = 1),
+        telefone        TEXT,
+        email           TEXT,
+        site_portfolio  TEXT,
+        cidade_estado   TEXT,
+        atualizado_em   TEXT NOT NULL
+    );
     """
     with get_connection() as conn:
         conn.executescript(ddl)
@@ -238,6 +247,43 @@ def carregar_sintese_projetos(perfil_id: int) -> dict | None:
         "modelo":    row["modelo"],
         "data_geracao": row["data_geracao"],
     }
+
+
+def salvar_dados_pessoais(dados: dict) -> None:
+    """
+    Salva (ou substitui) os dados pessoais de contato — telefone, email,
+    site/portfólio e cidade/estado. Tabela singleton (id fixo = 1):
+    cada chamada sobrescreve o registro anterior.
+    """
+    sql = """
+        INSERT INTO dados_pessoais (id, telefone, email, site_portfolio, cidade_estado, atualizado_em)
+        VALUES (1, :telefone, :email, :site_portfolio, :cidade_estado, :atualizado_em)
+        ON CONFLICT(id) DO UPDATE SET
+            telefone       = excluded.telefone,
+            email          = excluded.email,
+            site_portfolio = excluded.site_portfolio,
+            cidade_estado  = excluded.cidade_estado,
+            atualizado_em  = excluded.atualizado_em
+    """
+    with get_connection() as conn:
+        conn.execute(sql, {
+            "telefone":       dados.get("telefone"),
+            "email":          dados.get("email"),
+            "site_portfolio": dados.get("site_portfolio"),
+            "cidade_estado":  dados.get("cidade_estado"),
+            "atualizado_em":  datetime.now().isoformat(),
+        })
+    logger.info("Dados pessoais salvos/atualizados.")
+
+
+def carregar_dados_pessoais() -> dict | None:
+    """Carrega os dados pessoais de contato salvos, se existirem."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT telefone, email, site_portfolio, cidade_estado, atualizado_em "
+            "FROM dados_pessoais WHERE id = 1"
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def salvar_dados_brutos(perfil_id: int, origem: str, conteudo: str, dados_json: dict) -> None:

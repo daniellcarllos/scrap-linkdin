@@ -8,3 +8,4 @@ rich==13.7.1
 playwright==1.44.0
 python-dotenv==1.0.1
 anthropic>=0.40.0
+reportlab==4.2.2
